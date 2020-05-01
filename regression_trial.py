@@ -14,6 +14,7 @@ from sklearn.preprocessing import Normalizer, LabelEncoder
 FACE_DETECTION = False
 VECTOR_SIZE = 512
 EPOCHS = 100
+N_TRIALS = 100
 
 log_report = False
 
@@ -82,7 +83,12 @@ def objective(trial):
     # model training and evaluation
 
     es = EarlyStopping(monitor='val_mae', mode='min', verbose=1, patience=10)
-    mc = ModelCheckpoint('best_model.h5', monitor='val_mae', mode='max', verbose=1, save_best_only=True)
+
+    mc = ModelCheckpoint('best_model_{}.h5'.format(trial.number),
+                         monitor='val_mae',
+                         mode='max',
+                         verbose=1,
+                         save_best_only=True)
 
     model.fit(
         X_train, y_train,
@@ -101,7 +107,7 @@ def objective(trial):
 
 
 callback = None
-n_trials = 100
+n_trials = N_TRIALS
 
 if log_report:
     neptune.init(project_qualified_name='4ND4/sandbox')
