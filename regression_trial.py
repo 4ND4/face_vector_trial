@@ -13,10 +13,11 @@ from sklearn.preprocessing import Normalizer, LabelEncoder
 
 FACE_DETECTION = False
 VECTOR_SIZE = 512
-EPOCHS = 100
+EPOCHS = 10
 N_TRIALS = 100
+BATCH_SIZE = 64
 
-log_report = False
+log_report = True
 
 
 def getdata():
@@ -82,7 +83,7 @@ def objective(trial):
 
     # model training and evaluation
 
-    es = EarlyStopping(monitor='val_mae', mode='min', verbose=1, patience=10)
+    #es = EarlyStopping(monitor='val_mae', mode='min', verbose=1, patience=10)
 
     mc = ModelCheckpoint('best_model_{}.h5'.format(trial.number),
                          monitor='val_mae',
@@ -93,7 +94,9 @@ def objective(trial):
     model.fit(
         X_train, y_train,
         validation_data=(X_val, y_val),
-        batch_size=64, epochs=EPOCHS, callbacks=[es, mc])
+        batch_size=BATCH_SIZE, epochs=EPOCHS,
+        callbacks=[mc])
+
     y_pred = model.predict(X_val)
 
     if not np.any(np.isnan(y_pred)):
@@ -107,14 +110,14 @@ def objective(trial):
 
 
 callback = None
-n_trials = N_TRIALS
+n_trials = 1
 
 if log_report:
     neptune.init(project_qualified_name='4ND4/sandbox')
     neptune.create_experiment(name='optuna sweep')
     monitor = opt_utils.NeptuneMonitor()
     callback = [monitor]
-    n_trials = 1
+    n_trials = N_TRIALS
 
 study = optuna.create_study(direction='minimize')
 study.optimize(
