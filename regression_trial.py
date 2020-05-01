@@ -13,7 +13,7 @@ from sklearn.preprocessing import Normalizer, LabelEncoder
 
 FACE_DETECTION = False
 VECTOR_SIZE = 512
-EPOCHS = 10
+EPOCHS = 100
 N_TRIALS = 100
 BATCH_SIZE = 64
 
@@ -63,11 +63,9 @@ def regression_model(h_layers, h_units, lr):
 
     model.add(Dense(1, activation='linear'))
 
-    # opt = SGD(lr=lr, momentum=0.9)
-
     opt = Adam(lr=lr)
 
-    model.compile(loss='mean_squared_error', optimizer=opt, metrics=['mse', 'mae'])
+    model.compile(loss='mean_absolute_error', optimizer=opt, metrics=['mae'])
     return model
 
 
@@ -77,15 +75,18 @@ def objective(trial):
     h_layers = trial.suggest_int('h_layers', 1, 50)
     h_units = trial.suggest_int('h_units', 1, 1024)
     lr = trial.suggest_loguniform("lr", 1e-2, 1e-1)
+
     model = regression_model(h_layers=h_layers, h_units=h_units, lr=lr)
 
     X_train, y_train, X_val, y_val, x_test, Y_test = getdata()
 
     # model training and evaluation
 
-    #es = EarlyStopping(monitor='val_mae', mode='min', verbose=1, patience=10)
+    es = EarlyStopping(monitor='val_mae', mode='min', verbose=1, patience=10)
 
-    mc = ModelCheckpoint('best_model_{}.h5'.format(trial.number),
+    neptune_id = 'offline' if not log_report else result.id
+
+    mc = ModelCheckpoint('best_model_{}_{}.h5'.format(neptune_id, trial.number),
                          monitor='val_mae',
                          mode='max',
                          verbose=1,
@@ -95,18 +96,16 @@ def objective(trial):
         X_train, y_train,
         validation_data=(X_val, y_val),
         batch_size=BATCH_SIZE, epochs=EPOCHS,
-        callbacks=[mc])
+        callbacks=[es, mc])
 
     y_pred = model.predict(X_val)
 
-    if not np.any(np.isnan(y_pred)):
+    if np.any(np.isnan(y_pred)):
+        return 99
 
-        error = sklearn.metrics.mean_absolute_error(y_pred, y_val)
+    error = sklearn.metrics.mean_absolute_error(y_pred, y_val)
 
-    # output: evaluation score
-        return error
-    else:
-        print('nan values')
+    return error
 
 
 callback = None
@@ -114,9 +113,11 @@ n_trials = 1
 
 if log_report:
     neptune.init(project_qualified_name='4ND4/sandbox')
-    neptune.create_experiment(name='optuna sweep')
+    result = neptune.create_experiment(name='optuna sweep')
+
     monitor = opt_utils.NeptuneMonitor()
     callback = [monitor]
+    #callback = [KerasPruningCallback(trial, "val_mae")],
     n_trials = N_TRIALS
 
 study = optuna.create_study(direction='minimize')
@@ -126,5 +127,9 @@ study.optimize(
     callbacks=callback
 )
 
-print('Minimum mean absolute error: ' + str(study.best_value))
-print('Best parameter: ' + str(study.best_params))
+try:
+    print('Minimum mean absolute error: ' + str(study.best_value))
+    print('Best parameter: ' + str(study.best_params))
+
+except Exception as Ex:
+    print(Ex)
