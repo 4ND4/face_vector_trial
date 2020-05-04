@@ -1,3 +1,5 @@
+import neptune
+import neptunecontrib.monitoring.optuna as opt_utils
 import optuna
 from keras import Model, Input
 from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
@@ -176,6 +178,13 @@ else:
 
 shape_of_input = (VECTOR_SIZE, 1, 1)
 
+neptune.init(project_qualified_name='4ND4/sandbox')
+result = neptune.create_experiment(name='optuna CNN')
+
+monitor = opt_utils.NeptuneMonitor()
+callback = [monitor]
+n_trials = 100
+
 objective = Objective(train_X, train_Y, results_directory,
                       maximum_epochs, early_stop_epochs,
                       learning_rate_epochs, shape_of_input, num_classes)
@@ -184,7 +193,11 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 study = optuna.create_study(direction=optimizer_direction,
                             sampler=TPESampler(n_startup_trials=number_of_random_points))
 
-study.optimize(objective, timeout=maximum_time)
+study.optimize(
+    objective,
+    timeout=maximum_time,
+    callbacks=callback
+)
 
 # save results
 df_results = study.trials_dataframe()
