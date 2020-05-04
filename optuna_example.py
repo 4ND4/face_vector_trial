@@ -12,7 +12,7 @@ from keras import backend as K
 
 
 class Objective(object):
-    def __init__(self, xcalib, ycalib, dir_save,
+    def __init__(self, xcalib, ycalib, xvalid, yvalid, dir_save,
                  max_epochs, early_stop, learn_rate_epochs,
                  input_shape, number_of_classes):
         self.xcalib = xcalib
@@ -23,6 +23,8 @@ class Objective(object):
         self.learn_rate_epochs = learn_rate_epochs
         self.input_shape = input_shape
         self.number_of_classes = number_of_classes
+        self.xvalid = xvalid
+        self.yvalid = yvalid
 
     def __call__(self, trial):
         num_cnn_blocks = trial.suggest_int('num_cnn_blocks', 2, 4)
@@ -35,13 +37,17 @@ class Objective(object):
         batch_size = trial.suggest_categorical('batch_size', [32, 64, 96, 128])
         drop_out = trial.suggest_discrete_uniform('drop_out', 0.05, 0.5, 0.05)
 
+        learning_rate = trial.suggest_discrete_uniform('learning_rate', 0.001, 0.01, 0.00025)
+
         dict_params = {'num_cnn_blocks': num_cnn_blocks,
                        'num_filters': num_filters,
                        'kernel_size': kernel_size,
                        'num_dense_nodes': num_dense_nodes,
                        'dense_nodes_divisor': dense_nodes_divisor,
                        'batch_size': batch_size,
-                       'drop_out': drop_out}
+                       'drop_out': drop_out,
+                       'learning_rate': learning_rate
+                       }
 
         # start of cnn coding
         input_tensor = Input(shape=self.input_shape)
@@ -76,9 +82,9 @@ class Objective(object):
         # instantiate and compile model
         cnn_model = Model(inputs=input_tensor, outputs=output_tensor)
 
-        cnn_model.summary()
+        # cnn_model.summary()
 
-        opt = Adam(lr=0.00025)  # default = 0.001
+        opt = Adam(lr=dict_params.get('learning_rate'))  # default = 0.001
         cnn_model.compile(loss='mean_squared_error',
                           optimizer=opt, metrics=['accuracy'])
 
@@ -95,7 +101,8 @@ class Objective(object):
         h = cnn_model.fit(x=self.xcalib, y=self.ycalib,
                           batch_size=dict_params['batch_size'],
                           epochs=self.max_epochs,
-                          validation_split=0.25,
+                          #validation_split=0.25,
+                          validation_data=(self.xvalid, self.yvalid),
                           shuffle=True, verbose=0,
                           callbacks=callbacks_list)
 
@@ -129,7 +136,7 @@ def getdata():
     embeddings_val_npz_path = 'output/DeepUAge-val-faces-embeddings-{}-{}.npz'.format(VECTOR_SIZE, FACE_DETECTION)
 
     trainX, trainy, valX, valy = _data['arr_0'], _data['arr_1'], _data['arr_2'], _data['arr_3']
-    print('Dataset: train=%d, test=%d' % (trainX.shape[0], valX.shape[0]))
+    # print('Dataset: train=%d, test=%d' % (trainX.shape[0], valX.shape[0]))
 
     # normalize input vectors
     in_encoder = Normalizer(norm='l2')
@@ -148,7 +155,7 @@ def getdata():
 
     test_x, test_y = test_data['arr_0'], test_data['arr_1']
 
-    print('Dataset: test=%d' % (valX.shape[0]))
+    # print('Dataset: test=%d' % (valX.shape[0]))
 
     # normalize input vectors
 
@@ -163,7 +170,7 @@ def getdata():
     return trainX, trainy, valX, valy, test_x, test_y
 
 
-train_X, train_Y, _, _, _, _ = getdata()
+train_X, train_Y, val_X, val_Y, _, _ = getdata()
 
 shape_of_input = None
 img_rows = 512
@@ -171,9 +178,11 @@ img_cols = 1
 
 if K.image_data_format() == 'channels_first':
     train_X = train_X.reshape(train_X.shape[0], 1, img_rows, img_cols)
+    val_X = val_X.reshape(val_X.shape[0], 1,  img_rows, img_cols)
     # x_test = x_test.reshape(x_test.shape[0], 1, img_rows, img_cols)
 else:
     train_X = train_X.reshape(train_X.shape[0], img_rows, img_cols, 1)
+    val_X = val_X.reshape(val_X.shape[0], img_rows, img_cols, 1)
     # x_test = x_test.reshape(x_test.shape[0], img_rows, img_cols, 1)
 
 shape_of_input = (VECTOR_SIZE, 1, 1)
@@ -185,7 +194,7 @@ monitor = opt_utils.NeptuneMonitor()
 callback = [monitor]
 n_trials = 100
 
-objective = Objective(train_X, train_Y, results_directory,
+objective = Objective(train_X, train_Y, val_X, val_Y, results_directory,
                       maximum_epochs, early_stop_epochs,
                       learning_rate_epochs, shape_of_input, num_classes)
 
@@ -206,3 +215,4 @@ df_results.to_csv(results_directory + 'df_optuna_results.csv')
 
 print('Minimum error: ' + str(study.best_value))
 print('Best parameter: ' + str(study.best_params))
+print('Best trial: ' + str(study.best_trial))
