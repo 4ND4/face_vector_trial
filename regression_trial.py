@@ -13,9 +13,8 @@ from sklearn.preprocessing import Normalizer, LabelEncoder
 
 FACE_DETECTION = False
 VECTOR_SIZE = 512
-EPOCHS = 100
-N_TRIALS = 100
-BATCH_SIZE = 64
+EPOCHS = 1
+N_TRIALS = 1
 
 log_report = True
 
@@ -75,6 +74,7 @@ def objective(trial):
     h_layers = trial.suggest_int('h_layers', 1, 50)
     h_units = trial.suggest_int('h_units', 1, 1024)
     lr = trial.suggest_loguniform("lr", 1e-2, 1e-1)
+    batch_size = trial.suggest_categorical('batch_size', [32, 64, 96, 128])
 
     model = regression_model(h_layers=h_layers, h_units=h_units, lr=lr)
 
@@ -95,7 +95,7 @@ def objective(trial):
     model.fit(
         X_train, y_train,
         validation_data=(X_val, y_val),
-        batch_size=BATCH_SIZE, epochs=EPOCHS,
+        batch_size=batch_size, epochs=EPOCHS,
         callbacks=[es, mc])
 
     y_pred = model.predict(X_val)
@@ -130,6 +130,7 @@ study.optimize(
 try:
     print('Minimum mean absolute error: ' + str(study.best_value))
     print('Best parameter: ' + str(study.best_params))
+    print(study.best_trial)
 
 except Exception as Ex:
     print(Ex)
