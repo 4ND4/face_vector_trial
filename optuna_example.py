@@ -203,3 +203,6 @@ study.optimize(
 df_results = study.trials_dataframe()
 df_results.to_pickle(results_directory + 'df_optuna_results.pkl')
 df_results.to_csv(results_directory + 'df_optuna_results.csv')
+
+print('Minimum error: ' + str(study.best_value))
+print('Best parameter: ' + str(study.best_params))
