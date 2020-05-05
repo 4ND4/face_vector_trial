@@ -2,13 +2,25 @@ import keras
 import neptune
 import neptunecontrib.monitoring.optuna as opt_utils
 import optuna
-from keras import Model, Input, Sequential, optimizers
+from keras import Model, optimizers
 from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
-from keras.layers import BatchNormalization, Activation, Conv2D, Dropout, MaxPooling2D, Flatten, Dense
-from keras.optimizers import Adam
+from keras.layers import Dropout, Flatten, Dense, GlobalAveragePooling2D
 import numpy as np
 from optuna.samplers import TPESampler
 from sklearn.preprocessing import Normalizer, LabelEncoder
+
+maximum_epochs = 1000
+early_stop_epochs = 10
+learning_rate_epochs = 5
+optimizer_direction = 'minimize'
+number_of_random_points = 25  # random searches to start opt process
+maximum_time = 4 * 60 * 60  # seconds
+results_directory = 'output/'
+
+num_classes = 1
+VECTOR_SIZE = 512
+FACE_DETECTION = False
+channel = 3
 
 
 class Objective(object):
@@ -27,49 +39,40 @@ class Objective(object):
         self.yvalid = yvalid
 
     def __call__(self, trial):
-        num_cnn_blocks = trial.suggest_int('num_cnn_blocks', 2, 4)
-        num_filters = trial.suggest_categorical('num_filters', [16, 32, 48, 64])
-        kernel_size = trial.suggest_int('kernel_size', 2, 4)
-        num_dense_nodes = trial.suggest_categorical('num_dense_nodes',
-                                                    [64, 128, 512, 1024])
-        dense_nodes_divisor = trial.suggest_categorical('dense_nodes_divisor',
-                                                        [2, 4, 8])
         batch_size = trial.suggest_categorical('batch_size', [32, 64, 96, 128])
         drop_out = trial.suggest_discrete_uniform('drop_out', 0.05, 0.5, 0.05)
-
         learning_rate = trial.suggest_discrete_uniform('learning_rate', 0.001, 0.01, 0.00025)
-
-        dict_params = {'num_cnn_blocks': num_cnn_blocks,
-                       'num_filters': num_filters,
-                       'kernel_size': kernel_size,
-                       'num_dense_nodes': num_dense_nodes,
-                       'dense_nodes_divisor': dense_nodes_divisor,
-                       'batch_size': batch_size,
-                       'drop_out': drop_out,
-                       'learning_rate': learning_rate
-                       }
-
-
-        # start of cnn coding
-        #input_tensor = Input(shape=self.input_shape)
+        freeze_layers = trial.suggest_categorical('freeze_layers', [15, 25, 32, 40, 100, 150])
 
         # implement resnet50
 
         resnet_50 = keras.applications.resnet.ResNet50(
             include_top=False,
             weights='imagenet',
-            #input_tensor=input_tensor,
             input_shape=self.input_shape,
-            # pooling=None,
-            # classes=1
         )
 
         x = Flatten()(resnet_50.output)
-        x = Dense(1)(x)
-        model = Model(inputs=resnet_50.inputs, outputs=x)
+
+        # introduced
+
+        x = GlobalAveragePooling2D()(x)
+
+        # introduced
+
+        x = Dropout(drop_out)(x)
+
+        predictions = Dense(1)(x)
+
+        model = Model(inputs=resnet_50.inputs, outputs=predictions)
+
+        # introduced
+
+        for layer in model.layers[:-freeze_layers]:
+            layer.trainable = False
 
         model.compile(loss='mse',
-                      optimizer=optimizers.RMSprop(lr=2e-5),
+                      optimizer=optimizers.RMSprop(lr=learning_rate),
                       metrics=['mae'])
         model.summary()
 
@@ -84,7 +87,7 @@ class Objective(object):
 
         # fit the model
         h = model.fit(x=self.xcalib, y=self.ycalib,
-                      batch_size=dict_params['batch_size'],
+                      batch_size=batch_size,
                       epochs=self.max_epochs,
                       # validation_split=0.25,
                       validation_data=(self.xvalid, self.yvalid),
@@ -94,27 +97,6 @@ class Objective(object):
         validation_loss = np.min(h.history['val_loss'])
 
         return validation_loss
-
-
-maximum_epochs = 1000
-early_stop_epochs = 10
-learning_rate_epochs = 5
-optimizer_direction = 'minimize'
-number_of_random_points = 25  # random searches to start opt process
-maximum_time = 4 * 60 * 60  # seconds
-
-results_directory = 'output/'
-
-num_classes = 1
-VECTOR_SIZE = 512
-FACE_DETECTION = False
-
-# shape_of_input = (512, 1, 1)
-
-
-width = VECTOR_SIZE
-height = 1
-channel = 1
 
 
 def getdata():
@@ -153,27 +135,26 @@ def getdata():
 
     # modify so it complies with 4 dimensions.
 
+    trainX = np.repeat(trainX[:, :, np.newaxis], 3, axis=2)
+    valX = np.repeat(valX[:, :, np.newaxis], 3, axis=2)
+    test_x = np.repeat(test_x[:, :, np.newaxis], 3, axis=2)
+
+    trainX = np.repeat(trainX[:, :, np.newaxis], 32, axis=2)
+    valX = np.repeat(valX[:, :, np.newaxis], 32, axis=2)
+    test_x = np.repeat(test_x[:, :, np.newaxis], 32, axis=2)
+
     return trainX, trainy, valX, valy, test_x, test_y
 
 
 train_X, train_Y, val_X, val_Y, _, _ = getdata()
 
+# shape_of_input = (train_X.shape[0], 512, channel)
+shape_of_input = (512, 32, channel)
 
-img_rows = 512
-img_cols = 1
-
-
-train_X = train_X.reshape(train_X.shape[0], img_rows, img_cols, 1)
-val_X = val_X.reshape(val_X.shape[0], img_rows, img_cols, 1)
-# x_test = x_test.reshape(x_test.shape[0], img_rows, img_cols, 1)
-
-shape_of_input = (VECTOR_SIZE, 1, channel)
-
-#neptune.init(project_qualified_name='4ND4/sandbox')
-# result = neptune.create_experiment(name='optuna CNN')
-
-# monitor = opt_utils.NeptuneMonitor()
-# callback = [monitor]
+neptune.init(project_qualified_name='4ND4/sandbox')
+result = neptune.create_experiment(name='optuna Resnet50 Face Vectors')
+monitor = opt_utils.NeptuneMonitor()
+callback = [monitor]
 n_trials = 100
 
 objective = Objective(train_X, train_Y, val_X, val_Y, results_directory,
@@ -187,7 +168,7 @@ study = optuna.create_study(direction=optimizer_direction,
 study.optimize(
     objective,
     timeout=maximum_time,
-    # callbacks=callback
+    callbacks=callback
 )
 
 # save results
