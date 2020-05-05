@@ -167,3 +167,5 @@ print('\n# Generate predictions for 3 samples')
 predictions = model.predict(test_X[:3])
 print('predictions shape:', predictions.shape)
 model.save('model/model_{}.h5'.format(name))
+
+# finished
