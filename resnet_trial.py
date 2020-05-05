@@ -52,7 +52,13 @@ class Objective(object):
             input_shape=self.input_shape,
         )
 
-        x = Flatten()(resnet_50.output)
+        # start - changed
+
+        #x = Flatten()(resnet_50.output)
+
+        x = resnet_50.output
+
+        # end - changed
 
         # introduced
 
