@@ -70,7 +70,7 @@ optimizer = Adam(lr=PARAMS.get('learning_rate'))  # default = 0.001
 
 model.compile(optimizer=optimizer,
               loss='mse',
-              metrics=[metrics.mean_squared_error, metrics.mean_absolute_error])
+              metrics=['mae'])
 
 
 def getdata():
@@ -127,6 +127,7 @@ checkpoint = ModelCheckpoint('model-{epoch:03d}-{val_loss:03f}-{val_mae:03f}.h5'
 
 model.fit(
     train_X, train_Y,
+    validation_data=(val_X, val_Y),
     epochs=PARAMS['epoch_nr'],
     batch_size=PARAMS['batch_size'],
     callbacks=[es, checkpoint]
