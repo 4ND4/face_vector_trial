@@ -9,8 +9,13 @@ from keras.layers import BatchNormalization, Activation, Conv2D, Dropout, MaxPoo
 from keras.optimizers import Adam
 from sklearn.preprocessing import LabelEncoder, Normalizer
 
-neptune.init(project_qualified_name='4ND4/sandbox')
-neptune_tb.integrate_with_keras()
+
+DEBUG = False
+LOG_NEPTUNE = True
+EPOCHS = 1000
+
+if DEBUG:
+    EPOCHS = 100
 
 # parameters
 
@@ -18,7 +23,7 @@ VECTOR_SIZE = 512
 FACE_DETECTION = False
 
 PARAMS = {
-    'epoch_nr': 1000,
+    'epoch_nr': EPOCHS,
     'num_cnn_blocks': 3,
     'num_filters': 64,
     'kernel_size': 4,
@@ -31,7 +36,15 @@ PARAMS = {
 }
 
 # start experiment
-neptune.create_experiment(name='keras-integration-cnn', params=PARAMS)
+
+name = 'keras-integration-cnn'
+
+if LOG_NEPTUNE:
+    neptune.init(project_qualified_name='4ND4/sandbox')
+    neptune_tb.integrate_with_keras()
+    result = neptune.create_experiment(name=name, params=PARAMS)
+
+    name = result.id
 
 # start of cnn coding
 input_tensor = Input(shape=PARAMS.get('input_shape'))
@@ -80,6 +93,15 @@ def getdata():
     trainX, trainy, valX, valy = _data['arr_0'], _data['arr_1'], _data['arr_2'], _data['arr_3']
     # print('Dataset: train=%d, test=%d' % (trainX.shape[0], valX.shape[0]))
 
+    # test data
+
+    if DEBUG:
+        resize_value = 100
+
+        trainX, trainy, valX, valy = trainX[0:resize_value], trainy[0:resize_value], valX[0:resize_value], valy[
+                                                                                                           0:resize_value]
+        print('Dataset resized: train=%d, test=%d' % (trainX.shape[0], valX.shape[0]))
+
     # normalize input vectors
     in_encoder = Normalizer(norm='l2')
     trainX = in_encoder.transform(trainX)
@@ -121,8 +143,9 @@ train_X = train_X.reshape(train_X.shape[0], img_rows, img_cols, 1)
 test_X = test_X.reshape(test_X.shape[0], img_rows, img_cols, 1)
 val_X = val_X.reshape(val_X.shape[0], img_rows, img_cols, 1)
 
-es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=20)
-checkpoint = ModelCheckpoint('model-{epoch:03d}-{val_loss:03f}-{val_mae:03f}.h5', save_best_only=True,
+es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=10)
+
+checkpoint = ModelCheckpoint('checkpoint/model-{epoch:03d}-{val_loss:03f}-{val_mae:03f}.h5', save_best_only=True,
                              monitor='val_loss', mode='min')
 
 model.fit(
@@ -136,11 +159,11 @@ model.fit(
 # Evaluate the model on the test data using `evaluate`
 print('\n# Evaluate on test data')
 results = model.evaluate(test_X, test_Y, batch_size=PARAMS.get('batch_size'))
-print('test loss, test acc:', results)
+print('test loss, test mae:', results)
 
 # Generate predictions (probabilities -- the output of the last layer)
 # on new data using `predict`
 print('\n# Generate predictions for 3 samples')
 predictions = model.predict(test_X[:3])
 print('predictions shape:', predictions.shape)
-model.save('last_model.h5')
+model.save('model/model_{}.h5'.format(name))
