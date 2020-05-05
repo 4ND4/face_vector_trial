@@ -4,7 +4,7 @@ import neptune_tensorboard as neptune_tb
 import numpy as np
 # set project and start integration with keras
 from keras import Input, Model, metrics
-from keras.callbacks import EarlyStopping
+from keras.callbacks import EarlyStopping, ModelCheckpoint
 from keras.layers import BatchNormalization, Activation, Conv2D, Dropout, MaxPooling2D, Flatten, Dense
 from keras.optimizers import Adam
 from sklearn.preprocessing import LabelEncoder, Normalizer
@@ -122,12 +122,14 @@ test_X = test_X.reshape(test_X.shape[0], img_rows, img_cols, 1)
 val_X = val_X.reshape(val_X.shape[0], img_rows, img_cols, 1)
 
 es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=20)
+checkpoint = ModelCheckpoint('model-{epoch:03d}-{val_loss:03f}-{val_mae:03f}.h5', save_best_only=True,
+                             monitor='val_loss', mode='min')
 
 model.fit(
     train_X, train_Y,
     epochs=PARAMS['epoch_nr'],
     batch_size=PARAMS['batch_size'],
-    callbacks=[es]
+    callbacks=[es, checkpoint]
 )
 
 # Evaluate the model on the test data using `evaluate`
@@ -140,3 +142,4 @@ print('test loss, test acc:', results)
 print('\n# Generate predictions for 3 samples')
 predictions = model.predict(test_X[:3])
 print('predictions shape:', predictions.shape)
+model.save('my_model.h5')
