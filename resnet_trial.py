@@ -1,14 +1,14 @@
+import keras
 import neptune
 import neptunecontrib.monitoring.optuna as opt_utils
 import optuna
-from keras import Model, Input
+from keras import Model, Input, Sequential, optimizers
 from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
 from keras.layers import BatchNormalization, Activation, Conv2D, Dropout, MaxPooling2D, Flatten, Dense
 from keras.optimizers import Adam
 import numpy as np
 from optuna.samplers import TPESampler
 from sklearn.preprocessing import Normalizer, LabelEncoder
-from keras import backend as K
 
 
 class Objective(object):
@@ -49,44 +49,29 @@ class Objective(object):
                        'learning_rate': learning_rate
                        }
 
+
         # start of cnn coding
-        input_tensor = Input(shape=self.input_shape)
+        #input_tensor = Input(shape=self.input_shape)
 
-        # 1st cnn block
-        x = BatchNormalization()(input_tensor)
-        x = Activation('relu')(x)
-        x = Conv2D(filters=dict_params['num_filters'],
-                   kernel_size=dict_params['kernel_size'],
-                   strides=1, padding='same')(x)
-        # x = MaxPooling2D()(x)
-        x = Dropout(dict_params['drop_out'])(x)
+        # implement resnet50
 
-        # additional cnn blocks
-        for iblock in range(dict_params['num_cnn_blocks'] - 1):
-            x = BatchNormalization()(x)
-            x = Activation('relu')(x)
-            x = Conv2D(filters=dict_params['num_filters'],
-                       kernel_size=dict_params['kernel_size'],
-                       strides=1, padding='same')(x)
-            x = MaxPooling2D(padding='same')(x)
-            x = Dropout(dict_params['drop_out'])(x)
+        resnet_50 = keras.applications.resnet.ResNet50(
+            include_top=False,
+            weights='imagenet',
+            #input_tensor=input_tensor,
+            input_shape=self.input_shape,
+            # pooling=None,
+            # classes=1
+        )
 
-        # mlp
-        x = Flatten()(x)
-        x = Dense(dict_params['num_dense_nodes'], activation='relu')(x)
-        x = Dropout(dict_params['drop_out'])(x)
-        x = Dense(dict_params['num_dense_nodes'] // dict_params['dense_nodes_divisor'],
-                  activation='relu')(x)
-        output_tensor = Dense(self.number_of_classes, activation='linear')(x)
+        x = Flatten()(resnet_50.output)
+        x = Dense(1)(x)
+        model = Model(inputs=resnet_50.inputs, outputs=x)
 
-        # instantiate and compile model
-        cnn_model = Model(inputs=input_tensor, outputs=output_tensor)
-
-        # cnn_model.summary()
-
-        opt = Adam(lr=dict_params.get('learning_rate'))  # default = 0.001
-        cnn_model.compile(loss='mean_squared_error',
-                          optimizer=opt, metrics=['accuracy'])
+        model.compile(loss='mse',
+                      optimizer=optimizers.RMSprop(lr=2e-5),
+                      metrics=['mae'])
+        model.summary()
 
         # callbacks for early stopping and for learning rate reducer
         fn = self.dir_save + str(trial.number) + '_cnn.h5'
@@ -98,13 +83,13 @@ class Objective(object):
                                           monitor='val_loss', save_best_only=True)]
 
         # fit the model
-        h = cnn_model.fit(x=self.xcalib, y=self.ycalib,
-                          batch_size=dict_params['batch_size'],
-                          epochs=self.max_epochs,
-                          #validation_split=0.25,
-                          validation_data=(self.xvalid, self.yvalid),
-                          shuffle=True, verbose=0,
-                          callbacks=callbacks_list)
+        h = model.fit(x=self.xcalib, y=self.ycalib,
+                      batch_size=dict_params['batch_size'],
+                      epochs=self.max_epochs,
+                      # validation_split=0.25,
+                      validation_data=(self.xvalid, self.yvalid),
+                      shuffle=True, verbose=0,
+                      callbacks=callbacks_list)
 
         validation_loss = np.min(h.history['val_loss'])
 
@@ -126,9 +111,10 @@ FACE_DETECTION = False
 
 # shape_of_input = (512, 1, 1)
 
-layers = 3
+
 width = VECTOR_SIZE
 height = 1
+channel = 1
 
 
 def getdata():
@@ -172,26 +158,22 @@ def getdata():
 
 train_X, train_Y, val_X, val_Y, _, _ = getdata()
 
-shape_of_input = None
+
 img_rows = 512
 img_cols = 1
 
-if K.image_data_format() == 'channels_first':
-    train_X = train_X.reshape(train_X.shape[0], 1, img_rows, img_cols)
-    val_X = val_X.reshape(val_X.shape[0], 1,  img_rows, img_cols)
-    # x_test = x_test.reshape(x_test.shape[0], 1, img_rows, img_cols)
-else:
-    train_X = train_X.reshape(train_X.shape[0], img_rows, img_cols, 1)
-    val_X = val_X.reshape(val_X.shape[0], img_rows, img_cols, 1)
-    # x_test = x_test.reshape(x_test.shape[0], img_rows, img_cols, 1)
 
-shape_of_input = (VECTOR_SIZE, 1, 1)
+train_X = train_X.reshape(train_X.shape[0], img_rows, img_cols, 1)
+val_X = val_X.reshape(val_X.shape[0], img_rows, img_cols, 1)
+# x_test = x_test.reshape(x_test.shape[0], img_rows, img_cols, 1)
 
-neptune.init(project_qualified_name='4ND4/sandbox')
-result = neptune.create_experiment(name='optuna CNN')
+shape_of_input = (VECTOR_SIZE, 1, channel)
 
-monitor = opt_utils.NeptuneMonitor()
-callback = [monitor]
+#neptune.init(project_qualified_name='4ND4/sandbox')
+# result = neptune.create_experiment(name='optuna CNN')
+
+# monitor = opt_utils.NeptuneMonitor()
+# callback = [monitor]
 n_trials = 100
 
 objective = Objective(train_X, train_Y, val_X, val_Y, results_directory,
@@ -205,7 +187,7 @@ study = optuna.create_study(direction=optimizer_direction,
 study.optimize(
     objective,
     timeout=maximum_time,
-    callbacks=callback
+    # callbacks=callback
 )
 
 # save results

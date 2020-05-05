@@ -85,8 +85,8 @@ class Objective(object):
         # cnn_model.summary()
 
         opt = Adam(lr=dict_params.get('learning_rate'))  # default = 0.001
-        cnn_model.compile(loss='mean_squared_error',
-                          optimizer=opt, metrics=['accuracy'])
+        cnn_model.compile(loss='mean_absolute_error',
+                          optimizer=opt, metrics=['mae'])
 
         # callbacks for early stopping and for learning rate reducer
         fn = self.dir_save + str(trial.number) + '_cnn.h5'
