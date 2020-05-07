@@ -109,14 +109,12 @@ model.summary()
 # callbacks for early stopping and for learning rate reducer
 
 callbacks_list = [EarlyStopping(monitor='val_loss', patience=PARAMS.get('early_stop')),
-                  ReduceLROnPlateau(monitor='val_loss', factor=0.1,
-                                    patience=PARAMS.get('early_stop'),
-                                    verbose=1, mode='auto', min_lr=PARAMS.get('learning_rate')),
-                  ModelCheckpoint(filepath='checkpoint/model-{epoch:03d}-{val_loss:03f}.h5',
-                                  monitor='val_loss', save_best_only=True)]
+                  ModelCheckpoint(
+                      filepath='checkpoint/model-{epoch:03d}-{val_loss:03f}-{val_mae:03f}.h5',
+                      monitor='val_loss', save_best_only=True, verbose=1)
+                  ]
 
 train_X, train_Y, val_X, val_Y, test_X, test_Y = getdata()
-
 
 # fit the model
 h = model.fit(x=train_X, y=train_Y,
@@ -128,7 +126,7 @@ h = model.fit(x=train_X, y=train_Y,
 
 # Evaluate the model on the test data using `evaluate`
 print('\n# Evaluate on test data')
-results = model.evaluate(test_X, test_Y, batch_size=PARAMS.get('batch_size'))
+results = model.evaluate(test_X, test_Y, batch_size=128)
 print('test loss, test mae:', results)
 
 # Generate predictions (probabilities -- the output of the last layer)
@@ -137,5 +135,3 @@ print('\n# Generate predictions for 3 samples')
 predictions = model.predict(test_X[:3])
 print('predictions shape:', predictions.shape)
 model.save('model/model_{}.h5'.format(name))
-
-# finished
